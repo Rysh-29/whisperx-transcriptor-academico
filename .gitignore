@@ -1,0 +1,19 @@
+# Python virtual environments
+env/
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Output results
+salida/
+pruebas/salida/
+
+# Generated text files
+*.txt
+
+# OS files
+Thumbs.db
+.DS_Store
