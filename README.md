@@ -1,20 +1,21 @@
-# WhisperX – Transcriptor Académico
+ï»¿# WhisperX â€“ Transcriptor AcadÃ©mico
 
-WhisperX – Transcriptor Académico es una GUI para transcribir clases médicas usando WhisperX. Permite seleccionar una carpeta de audios, elegir múltiples archivos y ver el progreso de la transcripción. Incluye un post-proceso opcional para limpiar textos.
+WhisperX â€“ Transcriptor AcadÃ©mico es una GUI para transcribir audios usando faster-whisper (con soporte de GPU si hay CUDA). Permite seleccionar una carpeta de audios, elegir mÃºltiples archivos y ver el progreso de la transcripciÃ³n. Incluye un post-proceso opcional para limpiar textos.
 
 ## Funcionalidades principales
-- Selección de carpeta de audios
-- Selección múltiple de archivos
+- SelecciÃ³n de carpeta de audios
+- SelecciÃ³n mÃºltiple de archivos
 - Barra de progreso con porcentaje
 - Post-proceso de textos
+- SelecciÃ³n de modelo, idioma, formato y prompt
 
 ## Requisitos
-- Python 3.10–3.11
-- WhisperX
-- CUDA opcional (recomendado para aceleración)
+- Python 3.10â€“3.11
+- faster-whisper
+- CUDA opcional (recomendado para aceleraciÃ³n)
 
-## Ejecución
-Desde la carpeta `scripts/`:
+## EjecuciÃ³n
+Desde la carpeta `scripts/` (o desde la raÃ­z usando `python scripts/gui_whisperx.py`):
 
 ```bash
 python gui_whisperx.py

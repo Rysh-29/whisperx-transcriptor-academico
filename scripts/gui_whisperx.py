@@ -2,9 +2,21 @@ import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 from pathlib import Path
 import threading
-import subprocess
 import os
 import sys
+import subprocess
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from config import (
+    DEFAULT_MODEL,
+    DEFAULT_LANGUAGE,
+    DEFAULT_OUTPUT_FORMAT,
+    DEFAULT_PROMPT,
+)
+from transcribe_core import TranscribeConfig, collect_audio_files, transcribe_files, resolve_device
 
 # ---------- FIX ENCODING WINDOWS ----------
 try:
@@ -13,11 +25,6 @@ try:
 except Exception:
     pass
 
-# ---------- CONFIG ----------
-SUPPORTED_EXTS = (".mp3", ".wav", ".m4a", ".mp4")
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-SCRIPT_BATCH = SCRIPT_DIR / "batch_whisperx_lib.py"
 SCRIPT_POST = SCRIPT_DIR / "postprocess_limpio_medico.py"
 
 
@@ -26,7 +33,7 @@ class WhisperXGUI(tk.Tk):
         super().__init__()
 
         self.title("WhisperX – Transcriptor académico")
-        self.geometry("620x420")
+        self.geometry("640x520")
         self.resizable(False, False)
 
         self.audio_dir: Path | None = None
@@ -39,41 +46,85 @@ class WhisperXGUI(tk.Tk):
 
     # ---------- UI ----------
     def _build_ui(self):
-        ttk.Label(
+        header = ttk.Label(
             self,
             text="WhisperX – Transcriptor académico",
-            font=("Segoe UI", 12, "bold")
-        ).pack(pady=10)
+            font=("Segoe UI", 12, "bold"),
+        )
+        header.pack(pady=8)
 
         ttk.Button(
             self,
             text="📂 Seleccionar carpeta de audios",
-            command=self.select_folder
+            command=self.select_folder,
         ).pack(fill="x", padx=15)
+
+        self.options_frame = ttk.Frame(self)
+        self.options_frame.pack(fill="x", padx=15, pady=8)
+
+        ttk.Label(self.options_frame, text="Modelo:").grid(row=0, column=0, sticky="w")
+        self.model_var = tk.StringVar(value=DEFAULT_MODEL)
+        self.model_box = ttk.Combobox(
+            self.options_frame,
+            textvariable=self.model_var,
+            values=("tiny", "base", "small", "medium", "large-v2"),
+            width=12,
+        )
+        self.model_box.grid(row=0, column=1, padx=6, sticky="w")
+
+        ttk.Label(self.options_frame, text="Idioma:").grid(row=0, column=2, sticky="w")
+        self.lang_var = tk.StringVar(value=DEFAULT_LANGUAGE)
+        self.lang_box = ttk.Combobox(
+            self.options_frame,
+            textvariable=self.lang_var,
+            values=("es", "auto"),
+            width=8,
+            state="readonly",
+        )
+        self.lang_box.grid(row=0, column=3, padx=6, sticky="w")
+
+        ttk.Label(self.options_frame, text="Formato:").grid(row=0, column=4, sticky="w")
+        self.format_var = tk.StringVar(value=DEFAULT_OUTPUT_FORMAT)
+        self.format_box = ttk.Combobox(
+            self.options_frame,
+            textvariable=self.format_var,
+            values=("txt", "srt"),
+            width=8,
+            state="readonly",
+        )
+        self.format_box.grid(row=0, column=5, padx=6, sticky="w")
+
+        device, compute_type = resolve_device()
+        self.device_label = ttk.Label(
+            self.options_frame,
+            text=f"Dispositivo: {device} ({compute_type})",
+        )
+        self.device_label.grid(row=1, column=0, columnspan=6, sticky="w", pady=(4, 0))
 
         ttk.Label(
             self,
-            text="Archivos detectados (selecciona uno o varios):"
-        ).pack(anchor="w", padx=15, pady=(10, 0))
+            text="Contexto / prompt (editable):",
+        ).pack(anchor="w", padx=15)
 
-        self.listbox = tk.Listbox(
+        self.prompt_text = tk.Text(self, height=4, wrap="word")
+        self.prompt_text.pack(fill="x", padx=15, pady=(0, 8))
+        self.prompt_text.insert("1.0", DEFAULT_PROMPT)
+
+        ttk.Label(
             self,
-            selectmode="extended",
-            height=10
-        )
+            text="Archivos detectados (selecciona uno o varios):",
+        ).pack(anchor="w", padx=15, pady=(4, 0))
+
+        self.listbox = tk.Listbox(self, selectmode="extended", height=10)
         self.listbox.pack(fill="both", expand=True, padx=15)
 
         ttk.Button(
             self,
             text="▶ Iniciar transcripción",
-            command=self.start_process
-        ).pack(pady=10)
+            command=self.start_process,
+        ).pack(pady=8)
 
-        self.bar = ttk.Progressbar(
-            self,
-            variable=self.progress,
-            maximum=100
-        )
+        self.bar = ttk.Progressbar(self, variable=self.progress, maximum=100)
         self.bar.pack(fill="x", padx=20)
 
         ttk.Label(self, textvariable=self.status).pack(pady=6)
@@ -81,13 +132,13 @@ class WhisperXGUI(tk.Tk):
         ttk.Button(
             self,
             text="🧼 Post-procesar textos",
-            command=self.run_postprocess
+            command=self.run_postprocess,
         ).pack(pady=4)
 
         ttk.Button(
             self,
             text="📁 Abrir carpeta de resultados",
-            command=self.open_output
+            command=self.open_output,
         ).pack()
 
     # ---------- LOGIC ----------
@@ -106,11 +157,10 @@ class WhisperXGUI(tk.Tk):
         if not self.audio_dir or not self.audio_dir.exists():
             return
 
-        for f in sorted(self.audio_dir.iterdir()):
-            if f.is_file() and f.suffix.lower() in SUPPORTED_EXTS:
-                self.audio_files.append(f)
-                name = f.name.encode("utf-8", "replace").decode("utf-8")
-                self.listbox.insert(tk.END, name)
+        self.audio_files = collect_audio_files(self.audio_dir)
+        for f in self.audio_files:
+            name = f.name.encode("utf-8", "replace").decode("utf-8")
+            self.listbox.insert(tk.END, name)
 
         if not self.audio_files:
             self.status.set("⚠️ No se encontraron audios compatibles.")
@@ -131,49 +181,33 @@ class WhisperXGUI(tk.Tk):
         threading.Thread(
             target=self.run_batch,
             args=(selected_files,),
-            daemon=True
+            daemon=True,
         ).start()
 
     def run_batch(self, selected_files: list[Path]):
         try:
-            cmd = [
-                sys.executable,
-                "-u",
-                str(SCRIPT_BATCH),
-                str(self.audio_dir)
-            ]
+            if not self.audio_dir:
+                return
 
-            # si hay selección → solo esos archivos
-            for f in selected_files:
-                cmd.append(str(f))
+            files = selected_files or self.audio_files
+            output_dir = self.audio_dir / "salida"
 
-            process = subprocess.Popen(
-                cmd,
-                cwd=str(self.audio_dir),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace"
+            config = TranscribeConfig(
+                model=self.model_var.get().strip() or DEFAULT_MODEL,
+                language=self.lang_var.get().strip() or DEFAULT_LANGUAGE,
+                output_format=self.format_var.get().strip() or DEFAULT_OUTPUT_FORMAT,
+                prompt=self.prompt_text.get("1.0", "end").strip(),
             )
 
-            for line in process.stdout:
-                line = line.strip()
-                if not line:
-                    continue
+            def on_progress(file_index: int, total_files: int, file_pct: float, filename: str):
+                overall = ((file_index - 1) + (file_pct / 100.0)) / max(total_files, 1) * 100.0
+                self._set_progress(overall)
+                self._set_status(f"{filename} ({file_index}/{total_files}) {file_pct:.1f}%")
 
-                if line.startswith("PROGRESS"):
-                    try:
-                        pct = float(line.split()[1].replace("%", ""))
-                        self.progress.set(pct)
-                    except Exception:
-                        pass
-                else:
-                    self.status.set(line)
+            transcribe_files(files, output_dir, config, progress_cb=on_progress)
 
-            self.progress.set(100)
-            self.status.set("✅ Transcripción finalizada.")
-
+            self._set_progress(100)
+            self._set_status("✅ Transcripción finalizada.")
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -188,10 +222,7 @@ class WhisperXGUI(tk.Tk):
             return
 
         try:
-            subprocess.run(
-                [sys.executable, str(SCRIPT_POST), str(salida)],
-                check=True
-            )
+            subprocess.run([sys.executable, str(SCRIPT_POST), str(salida)], check=True)
             self.status.set("🧼 Post-proceso completado.")
         except Exception as e:
             messagebox.showerror("Error post-proceso", str(e))
@@ -206,7 +237,12 @@ class WhisperXGUI(tk.Tk):
         else:
             messagebox.showinfo("Info", "Aún no existe la carpeta salida.")
 
+    def _set_status(self, text: str):
+        self.after(0, lambda: self.status.set(text))
 
-# ---------- MAIN ----------
+    def _set_progress(self, value: float):
+        self.after(0, lambda: self.progress.set(value))
+
+
 if __name__ == "__main__":
     WhisperXGUI().mainloop()

@@ -1,18 +1,17 @@
 import re
+import sys
 from pathlib import Path
 
 # ---------- CONFIGURACIÓN ----------
-INPUT_DIR = Path("../pruebas/salida")
+DEFAULT_INPUT_DIR = Path("./salida")
 OUTPUT_SUFFIX = "_limpio"
 
 # ---------- REGLAS ----------
-# Muletillas comunes (eliminación suave)
 MULETILLAS = [
     r"\beh\b", r"\beste\b", r"\bbueno\b", r"\bentonces\b", r"\b¿no\?\b",
-    r"\bmmm\b", r"\bmm\b"
+    r"\bmmm\b", r"\bmm\b",
 ]
 
-# Correcciones médicas determinísticas (cerradas)
 CORRECCIONES = {
     r"\bericipela\b": "erisipela",
     r"\beris\s*y\s*pel[aá]\b": "erisipela",
@@ -23,55 +22,48 @@ CORRECCIONES = {
     r"\bcephaloporina\b": "cefalosporina",
 }
 
-# ---------- UTILIDADES ----------
+
 def limpiar_linea(linea: str) -> str:
     texto = linea
-
-    # Eliminar muletillas (case-insensitive)
     for m in MULETILLAS:
         texto = re.sub(m, "", texto, flags=re.IGNORECASE)
-
-    # Correcciones médicas
     for patron, reemplazo in CORRECCIONES.items():
         texto = re.sub(patron, reemplazo, texto, flags=re.IGNORECASE)
+    texto = re.sub(r"\s{2,}", " ", texto)
+    return texto.strip()
 
-    # Normalizaciones suaves
-    texto = re.sub(r"\s{2,}", " ", texto)   # espacios múltiples
-    texto = texto.strip()
 
-    return texto
+def main() -> int:
+    input_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_INPUT_DIR
+    input_dir = input_dir.expanduser().resolve()
 
-# ---------- MAIN ----------
-def main():
-    if not INPUT_DIR.exists():
-        print("❌ No existe la carpeta de entrada:", INPUT_DIR)
-        return
+    if not input_dir.exists():
+        print("❌ No existe la carpeta de entrada:", input_dir)
+        return 2
 
-    archivos = list(INPUT_DIR.glob("*.txt"))
+    archivos = list(input_dir.glob("*.txt"))
     if not archivos:
         print("❌ No se encontraron .txt para procesar.")
-        return
+        return 2
 
     print(f"🧼 Procesando {len(archivos)} archivos...")
 
     for path in archivos:
         if path.stem.endswith(OUTPUT_SUFFIX):
-            continue  # evita reprocesar
+            continue
 
         out_path = path.with_name(f"{path.stem}{OUTPUT_SUFFIX}.txt")
-
-        with open(path, "r", encoding="utf-8") as fin, \
-             open(out_path, "w", encoding="utf-8") as fout:
-
+        with open(path, "r", encoding="utf-8") as fin, open(out_path, "w", encoding="utf-8") as fout:
             for linea in fin:
                 limpia = limpiar_linea(linea)
-                if limpia:  # evita líneas vacías
+                if limpia:
                     fout.write(limpia + "\n")
 
         print(f"✅ Generado: {out_path.name}")
 
-    print("🎉 BLOQUE 10 – limpieza mínima completada.")
+    print("🎉 Limpieza mínima completada.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
